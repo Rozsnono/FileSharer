@@ -71,6 +71,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ linkId:
         });
     } catch (error) {
         console.error("Complete Upload Error:", error);
-        return NextResponse.json({ error: "Server Error" }, { status: 500 });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return NextResponse.json({ error: "Server Error", details: errorMessage, stack: error instanceof Error ? error.stack : undefined }, { status: 500 });
     }
 }
