@@ -3,6 +3,7 @@ import { webdav } from '@/lib/webdav';
 import { connectDB } from '@/lib/db';
 import { Session } from '@/models/Session';
 import { FileRecord } from '@/models/FileRecord';
+import { FileChunk } from '@/models/FileChunk';
 import fs from 'fs/promises';
 import { createReadStream, createWriteStream } from 'fs';
 import path from 'path';
@@ -22,16 +23,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ linkId:
         const session = await Session.findOne({ linkId });
         if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
-        const chunkDir = path.join(os.tmpdir(), 'vault-chunks', uploadId);
-        const mergedFilePath = path.join(os.tmpdir(), 'vault-chunks', `${uploadId}-merged`);
+        const chunksDir = path.join(os.tmpdir(), 'vault-chunks');
+        await fs.mkdir(chunksDir, { recursive: true });
+        const mergedFilePath = path.join(chunksDir, `${uploadId}-merged`);
 
-        // Merge chunks
+        // Merge chunks from DB
         const writeStream = createWriteStream(mergedFilePath);
         
         for (let i = 0; i < totalChunks; i++) {
-            const chunkPath = path.join(chunkDir, i.toString());
-            const data = await fs.readFile(chunkPath);
-            writeStream.write(data);
+            const chunkDoc = await FileChunk.findOne({ uploadId, chunkIndex: i });
+            if (!chunkDoc) {
+                throw new Error(`Missing chunk ${i} in database`);
+            }
+            writeStream.write(chunkDoc.data);
         }
         writeStream.end();
 
@@ -49,9 +53,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ linkId:
         const readStream = createReadStream(mergedFilePath);
         await webdav.putFileContents(`${linkId}/${fileName}`, readStream);
 
-        // Cleanup temp files
-        await fs.rm(chunkDir, { recursive: true, force: true });
+        // Cleanup temp file
         await fs.rm(mergedFilePath, { force: true });
+
+        // Cleanup chunks from DB
+        await FileChunk.deleteMany({ uploadId });
 
         // Save to Database
         const newFile = await FileRecord.create({
