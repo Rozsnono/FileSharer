@@ -45,7 +45,7 @@ export default function DashboardClient({ linkId, initialFiles, role, expiresAt 
             const { uploadId } = await initRes.json();
 
             // 2. Chunks
-            const chunkSize = 5 * 1024 * 1024; // 5MB
+            const chunkSize = 1 * 1024 * 1024; // 1MB
             const totalChunks = Math.ceil(file.size / chunkSize);
             let uploadedChunks = 0;
 
