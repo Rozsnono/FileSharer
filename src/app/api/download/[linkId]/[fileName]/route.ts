@@ -13,14 +13,7 @@ export async function GET(
         return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    // Get stream from WebDAV   
-    const stream = webdav.createReadStream(filePath);
+    const downloadLink = webdav.getFileDownloadLink(filePath);
 
-    // Return the stream as a response
-    return new Response(stream as any, {
-        headers: {
-            'Content-Disposition': `attachment; filename="${fileName}"`,
-            'Content-Type': 'application/octet-stream',
-        },
-    });
+    return NextResponse.json({ url: downloadLink });
 }

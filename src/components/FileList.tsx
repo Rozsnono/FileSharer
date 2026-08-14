@@ -3,6 +3,25 @@ import { FileText, Download, Clock, AlertCircle, CheckCircle2, Loader2 } from 'l
 import { FileItem } from './DashboardClient';
 
 export default function FileList({ files, linkId }: { files: FileItem[], linkId: string }) {
+    const handleDownload = async (fileName: string) => {
+        try {
+            const res = await fetch(`/api/download/${linkId}/${fileName}`);
+            if (!res.ok) throw new Error('Download failed');
+            const data = await res.json();
+            if (data.url) {
+                const a = document.createElement('a');
+                a.href = data.url;
+                a.download = fileName; // Optional hint
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Failed to get download link");
+        }
+    };
+
     if (files.length === 0) {
         return (
             <div className="bg-white rounded-[2rem] p-16 text-center border border-slate-100">
@@ -45,13 +64,13 @@ export default function FileList({ files, linkId }: { files: FileItem[], linkId:
 
                     <div className="z-10">
                         {file.status === 'uploaded' ? (
-                            <a
-                                href={`/api/download/${linkId}/${file.fileName}`}
+                            <button
+                                onClick={() => file.fileName && handleDownload(file.fileName)}
                                 className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white hover:bg-indigo-600 transition-all shadow-md"
-                                download
+                                title="Download"
                             >
                                 <Download className="w-4 h-4" />
-                            </a>
+                            </button>
                         ) : file.status === 'error' ? (
                             <AlertCircle className="w-6 h-6 text-red-400 mr-2" />
                         ) : null}

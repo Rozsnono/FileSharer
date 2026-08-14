@@ -24,50 +24,78 @@ export default function DashboardClient({ linkId, initialFiles, role, expiresAt 
         setMounted(true);
     }, []);
 
-    const startUpload = (file: File) => {
+    const startUpload = async (file: File) => {
         const tempId = Math.random().toString(36).slice(2);
-
         const newFile: FileItem = {
-            id: tempId,
-            originalName: file.name,
-            size: file.size,
-            uploadedAt: new Date().toISOString(),
-            status: 'pending',
-            progress: 0
+            id: tempId, originalName: file.name, size: file.size,
+            uploadedAt: new Date().toISOString(), status: 'pending', progress: 0
         };
-
         setFiles(prev => [newFile, ...prev]);
 
-        const xhr = new XMLHttpRequest();
-        const formData = new FormData();
-        formData.append('file', file);
+        try {
+            updateFileStatus(tempId, { status: 'uploading', progress: 0 });
 
-        xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-                const percent = Math.round((e.loaded / e.total) * 100);
-                updateFileStatus(tempId, { status: 'uploading', progress: percent });
-            }
-        });
+            // 1. Init
+            const initRes = await fetch(`/api/upload/${linkId}/init`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ originalName: file.name })
+            });
+            if (!initRes.ok) throw new Error("Init failed");
+            const { uploadId } = await initRes.json();
 
-        xhr.addEventListener('load', () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-                const response = JSON.parse(xhr.responseText);
-                updateFileStatus(tempId, {
-                    status: 'uploaded',
-                    progress: 100,
-                    fileName: response.file.fileName
+            // 2. Chunks
+            const chunkSize = 5 * 1024 * 1024; // 5MB
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            let uploadedChunks = 0;
+
+            // Upload chunks sequentially to avoid memory spikes
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(file.size, start + chunkSize);
+                const chunk = file.slice(start, end);
+
+                const formData = new FormData();
+                formData.append('uploadId', uploadId);
+                formData.append('chunkIndex', i.toString());
+                formData.append('chunk', chunk);
+
+                const chunkRes = await fetch(`/api/upload/${linkId}/chunk`, {
+                    method: 'POST',
+                    body: formData
                 });
-            } else {
-                updateFileStatus(tempId, { status: 'error', progress: 0 });
+                if (!chunkRes.ok) throw new Error(`Chunk ${i} failed`);
+                
+                uploadedChunks++;
+                const percent = Math.round((uploadedChunks / totalChunks) * 100);
+                // Keep at 99% until complete finishes
+                updateFileStatus(tempId, { progress: percent === 100 ? 99 : percent });
             }
-        });
 
-        xhr.addEventListener('error', () => {
+            // 3. Complete
+            const completeRes = await fetch(`/api/upload/${linkId}/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uploadId,
+                    originalName: file.name,
+                    size: file.size,
+                    mimeType: file.type,
+                    totalChunks
+                })
+            });
+            if (!completeRes.ok) throw new Error("Complete failed");
+            const { file: completedFile } = await completeRes.json();
+
+            updateFileStatus(tempId, {
+                status: 'uploaded',
+                progress: 100,
+                fileName: completedFile.fileName
+            });
+        } catch (error) {
+            console.error("Upload error", error);
             updateFileStatus(tempId, { status: 'error', progress: 0 });
-        });
-
-        xhr.open('POST', `/api/upload/${linkId}`);
-        xhr.send(formData);
+        }
     };
 
     const updateFileStatus = (id: string, updates: Partial<FileItem>) => {
